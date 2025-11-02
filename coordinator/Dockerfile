@@ -5,7 +5,7 @@ FROM prestart:latest
 WORKDIR /app
 
 # Копируем исходный код проекта в контейнер
-COPY . .  
+COPY coordinator/ .  
 
 # Сборка проекта
 RUN mkdir -p build && \

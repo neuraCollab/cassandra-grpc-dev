@@ -26,7 +26,7 @@ RUN git clone https://github.com/datastax/cpp-driver.git /tmp/cpp-driver && \
 
 # Копирование исходного кода
 WORKDIR /app
-COPY . .
+COPY worker/ .
 
 # Сборка проекта
 RUN mkdir -p build && \

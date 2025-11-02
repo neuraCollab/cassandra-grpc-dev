@@ -11,3 +11,4 @@ spec:
   storageClassName: "" # Убедитесь, что он совпадает с PVC
   hostPath:
     path: /home/bubu/Documents/distributed_parser/cassandra # Абсолютный путь
+    #  path: /mnt/data/cassandra-data
