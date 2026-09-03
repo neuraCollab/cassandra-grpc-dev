@@ -68,18 +68,23 @@ jobs:
       - name: Verify coordinator and worker are running
         run: |
           for service in coordinator worker; do
-            cid=$(docker compose ps -q "$service")
-            if [ -z "$cid" ]; then
+            cids=$(docker compose ps -q "$service")
+            if [ -z "$cids" ]; then
               echo "No container found for $service"
               exit 1
             fi
-            state=$(docker inspect --format='{{.State.Status}}' "$cid")
-            echo "$service state: $state"
-            if [ "$state" != "running" ]; then
-              echo "$service is not running"
-              docker compose logs "$service"
-              exit 1
-            fi
+            # worker scales to 3 replicas (docker-compose.yml deploy.replicas),
+            # so this can't assume a single container id per service.
+            while IFS= read -r cid; do
+              name=$(docker inspect --format='{{.Name}}' "$cid" | sed 's#^/##')
+              state=$(docker inspect --format='{{.State.Status}}' "$cid")
+              echo "$name state: $state"
+              if [ "$state" != "running" ]; then
+                echo "$name is not running"
+                docker compose logs "$service"
+                exit 1
+              fi
+            done <<< "$cids"
           done
 
       - name: Show container status
