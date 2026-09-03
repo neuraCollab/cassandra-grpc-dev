@@ -1,0 +1,10 @@
+# Overrides applied on top of ../docker-compose.yml for the VS Code Dev Container.
+# Attaches to the "builder" stage (full toolchain: cmake, vcpkg, gdb) instead of
+# the minimal runtime image, and mounts the full repo for live editing.
+services:
+  coordinator:
+    build:
+      target: builder
+    volumes:
+      - ..:/workspaces/cassandra-grpc-dev:cached
+    command: sleep infinity

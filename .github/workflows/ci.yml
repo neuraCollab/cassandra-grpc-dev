@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docker-compose-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build shared base image (vcpkg manifest)
+        run: docker build -f docker/Dockerfile.vcpkg -t base-vcpkg:latest .
+
+      - name: docker compose build
+        run: docker compose build
+
+      - name: docker compose up -d
+        run: docker compose up -d
+
+      - name: Wait for Cassandra to become healthy
+        run: |
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose ps -q cassandra)" 2>/dev/null || echo "starting")
+            echo "cassandra health: $status"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Cassandra did not become healthy in time"
+          docker compose logs cassandra
+          exit 1
+
+      - name: Verify coordinator and worker are running
+        run: |
+          for service in coordinator worker; do
+            cid=$(docker compose ps -q "$service")
+            if [ -z "$cid" ]; then
+              echo "No container found for $service"
+              exit 1
+            fi
+            state=$(docker inspect --format='{{.State.Status}}' "$cid")
+            echo "$service state: $state"
+            if [ "$state" != "running" ]; then
+              echo "$service is not running"
+              docker compose logs "$service"
+              exit 1
+            fi
+          done
+
+      - name: Show container status
+        if: always()
+        run: docker compose ps
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: docker compose down
+        if: always()
+        run: docker compose down -v
