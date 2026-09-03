@@ -16,8 +16,19 @@ jobs:
       - name: Build shared base image (vcpkg manifest)
         run: docker build -f docker/Dockerfile.vcpkg -t base-vcpkg:latest .
 
-      - name: docker compose build
-        run: docker compose build
+      # docker-compose.yml now defaults coordinator/worker to prebuilt GHCR
+      # `image:` references (their `build:` blocks are commented out, see
+      # README "Using Prebuilt Images"), so `docker compose build` has
+      # nothing to build for them. This CI job's job is to validate the
+      # LOCAL build path (the one developers use when changing C++ code),
+      # so build both images directly here, tagged to exactly match the
+      # `image:` references in docker-compose.yml -- `docker compose up`
+      # uses an image already present locally instead of pulling it, so
+      # this doesn't depend on GHCR or its package visibility at all.
+      - name: Build coordinator and worker images
+        run: |
+          docker build -f coordinator/Dockerfile -t ghcr.io/neuracollab/coordinator:latest ./coordinator
+          docker build -f worker/Dockerfile -t ghcr.io/neuracollab/worker:latest ./worker
 
       - name: docker compose up -d
         run: docker compose up -d
