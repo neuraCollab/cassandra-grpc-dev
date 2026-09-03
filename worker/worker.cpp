@@ -4,15 +4,31 @@
 #include <cassandra.h>
 #include <iostream>
 #include <chrono>
+#include <unistd.h>
+
+namespace {
+// Each Docker Compose/Kubernetes replica gets its own container hostname,
+// so this gives every worker instance a distinct ID without any extra
+// configuration -- previously every replica hardcoded "worker_1", which
+// made them silently overwrite each other's rows in Cassandra (task_requests
+// is keyed on worker_id alone).
+std::string DetectWorkerId() {
+    char hostname[256] = {0};
+    if (gethostname(hostname, sizeof(hostname) - 1) == 0) {
+        return std::string(hostname);
+    }
+    return "unknown-worker";
+}
+}  // namespace
 
 // Конструктор для WorkerClient
 WorkerClient::WorkerClient(std::shared_ptr<grpc::Channel> channel)
-    : stub_(parser::Coordinator::NewStub(channel)) {}
+    : stub_(parser::Coordinator::NewStub(channel)), worker_id_(DetectWorkerId()) {}
 
 // Получение задания от координатора
 std::string WorkerClient::GetTask() {
     parser::TaskRequest request;
-    request.set_worker_id("worker_1");
+    request.set_worker_id(worker_id_);
 
     parser::TaskResponse response;
     grpc::ClientContext context;
@@ -28,7 +44,7 @@ std::string WorkerClient::GetTask() {
 // Отправка результата координатору
 void WorkerClient::ReportResult(const std::string& url, const std::string& result) {
     parser::TaskResult taskResult;
-    taskResult.set_worker_id("worker_1");
+    taskResult.set_worker_id(worker_id_);
     taskResult.set_url(url);
     taskResult.set_result(result);
 

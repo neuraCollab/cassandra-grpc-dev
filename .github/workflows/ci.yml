@@ -13,8 +13,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build shared base image (vcpkg manifest)
-        run: docker build -f docker/Dockerfile.vcpkg -t base-vcpkg:latest .
+      # Compiling grpc/protobuf/abseil/the Cassandra driver from scratch takes
+      # 30-45+ minutes, and a plain `docker build` here has no cache across
+      # runs (each GitHub Actions run is a fresh VM). publish-ghcr.yml already
+      # builds this exact image with a GitHub Actions cache (scope=base-vcpkg)
+      # -- reuse that cache here via Buildx instead of recompiling from zero
+      # on every push/PR. `load: true` puts the result into the runner's local
+      # Docker daemon so the plain `docker build` steps below can still find
+      # it via `FROM base-vcpkg:latest`, same as they always could.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build shared base image (vcpkg manifest, GHA-cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.vcpkg
+          load: true
+          tags: base-vcpkg:latest
+          cache-from: type=gha,scope=base-vcpkg
+          cache-to: type=gha,mode=max,scope=base-vcpkg
 
       # docker-compose.yml now defaults coordinator/worker to prebuilt GHCR
       # `image:` references (their `build:` blocks are commented out, see
@@ -50,18 +68,23 @@ jobs:
       - name: Verify coordinator and worker are running
         run: |
           for service in coordinator worker; do
-            cid=$(docker compose ps -q "$service")
-            if [ -z "$cid" ]; then
+            cids=$(docker compose ps -q "$service")
+            if [ -z "$cids" ]; then
               echo "No container found for $service"
               exit 1
             fi
-            state=$(docker inspect --format='{{.State.Status}}' "$cid")
-            echo "$service state: $state"
-            if [ "$state" != "running" ]; then
-              echo "$service is not running"
-              docker compose logs "$service"
-              exit 1
-            fi
+            # worker scales to 3 replicas (docker-compose.yml deploy.replicas),
+            # so this can't assume a single container id per service.
+            while IFS= read -r cid; do
+              name=$(docker inspect --format='{{.Name}}' "$cid" | sed 's#^/##')
+              state=$(docker inspect --format='{{.State.Status}}' "$cid")
+              echo "$name state: $state"
+              if [ "$state" != "running" ]; then
+                echo "$name is not running"
+                docker compose logs "$service"
+                exit 1
+              fi
+            done <<< "$cids"
           done
 
       - name: Show container status
