@@ -5,9 +5,9 @@
 [![worker on GHCR](https://img.shields.io/badge/ghcr.io-worker-blue?logo=docker)](https://github.com/neuraCollab/cassandra-grpc-dev/pkgs/container/worker)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Production-ready Docker template for building distributed C++ microservices with gRPC, Protocol Buffers, and Apache Cassandra.**
+**A Docker + vcpkg starter stack for distributed C++ microservices — gRPC, Protocol Buffers, and Apache Cassandra, wired together and verified working.**
 
-This is a *template*, not a finished application: it gives you a working coordinator/worker architecture, vcpkg-based dependency management, multi-stage Docker builds, and a CI/CD pipeline that publishes to GHCR — all wired together and verified working — with an example parsing pipeline standing in for whatever business logic you're actually building.
+This is a *template*, not a finished application: it gives you a working coordinator/worker architecture, vcpkg-based dependency management, multi-stage Docker builds, and a CI/CD pipeline that publishes to GHCR, with an example parsing pipeline standing in for whatever business logic you're actually building. It's a solid starting point for prototyping, learning, or bootstrapping a new service — it is *not* hardened for production as-is (no auth, no TLS, no tests yet — see [Known Limitations / Roadmap](#known-limitations--roadmap)).
 
 ---
 
@@ -15,6 +15,7 @@ This is a *template*, not a finished application: it gives you a working coordin
 
 - [Features](#features)
 - [What's Inside?](#whats-inside)
+- [Known Limitations / Roadmap](#known-limitations--roadmap)
 - [Using Prebuilt Images (Recommended)](#using-prebuilt-images-recommended)
 - [Quick Start (Local Development)](#quick-start-local-development)
 - [VS Code Dev Container](#vs-code-dev-container)
@@ -57,7 +58,7 @@ This is a **template with a working example**, not a ready-made product:
 - **Worker(s)**: example gRPC clients that fetch and parse data (via curl + libxml2) and write results to Cassandra (3 replicas by default) — replace with your own business logic
 - **Cassandra**: a pre-configured NoSQL store for results
 - **Web UI**: `cassandra-web`, for visualizing stored data
-- **Infrastructure**: a production-ready Docker/CI setup around all of the above
+- **Infrastructure**: a working Docker/CI setup around all of the above — see [Known Limitations / Roadmap](#known-limitations--roadmap) for what it doesn't cover yet
 
 ### Architecture
 
@@ -103,9 +104,32 @@ Pinned/observed from an actual build of this repo's `docker/Dockerfile.vcpkg` �
 - Learn multi-stage builds, vcpkg manifest mode, and GHCR publishing by example
 - Replace the example parsing logic with your own business logic when you're ready
 
-### What this template does *not* include
+---
 
-Being upfront about scope: this is infrastructure and an example pipeline, not a hardened product. It doesn't currently include authentication/authorization on the gRPC services, TLS between services (channels are created with `InsecureChannelCredentials`), automated tests, or Cassandra data modeling beyond the one example table. Add these as your project needs them — the point of the template is to get the plumbing (builds, images, CI, service wiring) out of your way, not to make those decisions for you.
+## 🗺️ Known Limitations / Roadmap
+
+Being upfront about scope: this is infrastructure and an example pipeline, not a hardened product. Specifically, as of now:
+
+**Security**
+- No authentication/authorization on the gRPC services.
+- No TLS between coordinator/worker — channels are created with `InsecureChannelCredentials`.
+- No TLS to Cassandra, and `docker-compose.yml` ships a default `CASSANDRA_PASSWORD=cassandra` in plaintext (fine for local dev, not for anything internet-facing).
+
+**Reliability / data model**
+- The coordinator's task queue is an in-memory `std::vector` ([`coordinator/coordinator.h`](coordinator/coordinator.h)) — it's lost on restart, and the coordinator can't be scaled to more than one replica without workers seeing inconsistent queues.
+- Cassandra runs as a single node with `replication_factor: 1` ([`cassandra/setup.cql`](cassandra/setup.cql)) and no data volume in `docker-compose.yml` — stored results don't survive `docker compose down -v`.
+- Of the 5 tables `cassandra/setup.cql` defines, only `parsed_results` is actually written to by the example worker code — the rest (`task_requests`, `task_results`, `submitted_tasks`, `result_acks`) are schema only.
+
+**Operations**
+- No gRPC health-check protocol on coordinator/worker (only Cassandra has a container healthcheck).
+- No graceful shutdown — `server->Wait()` blocks indefinitely; in-flight tasks are lost on a restart/redeploy.
+- No structured logging, metrics, or tracing — just `std::cout`/`std::cerr`.
+- No retry/backoff strategy on the worker beyond a flat 1-second sleep when the queue is empty.
+
+**Testing**
+- No unit or integration tests exist yet. `.github/workflows/ci.yml` validates that the stack *builds and starts*, not that it behaves correctly.
+
+None of this blocks using the template to learn from or prototype with — it's exactly the kind of thing you'd expect to add as a project built on this template matures, and the list above should save you from having to rediscover it yourself.
 
 ---
 
@@ -267,26 +291,30 @@ worker/                   # example gRPC client (parsing + Cassandra write)
 cassandra/                # Cassandra init scripts (setup.cql)
 docker-compose.yml        # local dev stack
 .github/workflows/        # CI/CD: docker-compose validation + auto-publish to GHCR
-.devcontainer/             # VS Code development environment
-kubernetes/                # K8s manifests for production deployment
+.devcontainer/            # VS Code development environment
+kubernetes/               # K8s manifests for production deployment
+CONTRIBUTING.md           # dev environment setup + PR guidelines
+LICENSE                   # MIT
 ```
 
 ---
 
 ## 🖼️ Screenshots
 
-### Docker Compose Stack
-![Docker Compose Status](./assets/docker-compose-ps.png)
-
 ### Cassandra Web UI
-![Cassandra Web UI](./assets/cassandra-web-ui.png)
 
-### 📸 How to Update Screenshots
+![Cassandra Web UI](https://raw.githubusercontent.com/neuraCollab/cassandra-grpc-dev/main/assets/database.png)
+
+This screenshot is from the `cassandra-web` UI reachable at http://localhost:3000 after `docker compose up -d`.
+
+There's currently no screenshot of the `docker compose ps` output itself — see below if you'd like to add one.
+
+### 📸 Adding/Updating Screenshots
 
 1. Run `docker compose up -d` and wait for `docker compose ps` to report `healthy`.
-2. Take a screenshot of the terminal output of `docker compose ps` → save as `assets/docker-compose-ps.png`.
-3. Open http://localhost:3000 → screenshot the Web UI → save as `assets/cassandra-web-ui.png`.
-4. Commit: `git add assets/ && git commit -m "docs: add screenshots"`.
+2. Take a screenshot of whatever you're documenting (terminal output, a browser window, etc.) and save it under `assets/`.
+3. Reference it in this README with the full raw URL (`https://raw.githubusercontent.com/neuraCollab/cassandra-grpc-dev/main/assets/<file>.png`), not a relative path — relative paths only render on GitHub's own file viewer, not when this README is copied/shared elsewhere.
+4. Commit: `git add assets/ && git commit -m "docs: update screenshots"`.
 5. Recommended resolution: 1200×675 (16:9).
 
 ---
@@ -340,7 +368,7 @@ kubectl port-forward deployment/cassandra-web 8083:8083
 
 ### Screenshots
 
-![Minikube Dashboard](./assets/minikube-dashboard.png)
+![Minikube Dashboard](https://raw.githubusercontent.com/neuraCollab/cassandra-grpc-dev/main/assets/dashboard.png)
 > 📌 **Tip**: Run `minikube dashboard` to monitor pods, services, and logs in real time.
 
 ### Verify
@@ -383,6 +411,8 @@ worker-xxxxx                              1/1     Running   0          2m
 5. Open a Pull Request
 
 Opening a PR against `main` automatically runs `.github/workflows/ci.yml`, which builds `coordinator`/`worker` from your branch and brings the full stack up with `docker compose` — so a broken build or a service that fails to start shows up before review, not after merge.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a more detailed dev environment walkthrough and code style notes.
 
 ---
 

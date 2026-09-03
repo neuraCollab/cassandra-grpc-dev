@@ -1,0 +1,19 @@
+# Local environment config (copy .env.example to .env and edit it)
+.env
+
+# Build output
+build/
+**/build/
+vcpkg_installed/
+
+# Generated protobuf/gRPC stubs -- regenerated inside docker/Dockerfile.vcpkg,
+# not meant to be committed
+generated/
+
+# Compiled objects, in case anything is built outside Docker
+*.o
+*.obj
+
+# Editor/IDE
+.vscode/
+.vs/
