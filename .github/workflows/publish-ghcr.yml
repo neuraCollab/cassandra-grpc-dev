@@ -1,0 +1,110 @@
+name: Publish Docker Images to GHCR
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # coordinator/Dockerfile and worker/Dockerfile both start with
+  # `FROM base-vcpkg:latest` — an image that is never otherwise published
+  # (it only exists locally for developers; see README "Quick Start").
+  # We build it once here and push it into this repo's own GHCR namespace,
+  # then redirect that FROM at it from the matrix job below via
+  # `build-contexts` / docker-image://, without editing either Dockerfile.
+  base-image:
+    name: Build shared vcpkg base image
+    runs-on: ubuntu-latest
+    outputs:
+      owner_lc: ${{ steps.owner.outputs.owner_lc }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR rejects uppercase repository paths; github.repository_owner
+      # preserves the owner's actual casing (e.g. "neuraCollab"), so every
+      # image reference in this workflow uses this lowercased value instead.
+      - name: Compute lowercase repository owner
+        id: owner
+        run: echo "owner_lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push base-vcpkg
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.vcpkg
+          push: true
+          tags: ghcr.io/${{ steps.owner.outputs.owner_lc }}/base-vcpkg:latest
+          cache-from: type=gha,scope=base-vcpkg
+          cache-to: type=gha,mode=max,scope=base-vcpkg
+
+  build-and-push:
+    name: Build and push ${{ matrix.service }}
+    needs: base-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [coordinator, worker]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ needs.base-image.outputs.owner_lc }}/${{ matrix.service }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ github.sha }}
+            type=raw,value=${{ github.ref_name }},enable=${{ github.event_name == 'release' }}
+
+      # context is the service's own subdirectory (matching docker-compose.yml
+      # and the Dockerfiles' `COPY . .`) — NOT the repo root. Repo-root context
+      # here would break `COPY . .`, since each service's CMakeLists.txt lives
+      # at <service>/CMakeLists.txt, not at the repo root.
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          build-contexts: |
+            base-vcpkg:latest=docker-image://ghcr.io/${{ needs.base-image.outputs.owner_lc }}/base-vcpkg:latest
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

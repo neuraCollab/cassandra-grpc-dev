@@ -43,16 +43,20 @@ services:
     
       
   coordinator:
-    build:
-      context: ./coordinator
-      dockerfile: Dockerfile
+    image: ghcr.io/neuracollab/coordinator:latest
+    # Local build instead of the prebuilt GHCR image:
+    # build:
+    #   context: ./coordinator
+    #   dockerfile: Dockerfile
     networks:
       - app-network
 
   worker:
-    build:
-      context: ./worker
-      dockerfile: Dockerfile
+    image: ghcr.io/neuracollab/worker:latest
+    # Local build instead of the prebuilt GHCR image:
+    # build:
+    #   context: ./worker
+    #   dockerfile: Dockerfile
     networks:
       - app-network
     deploy:

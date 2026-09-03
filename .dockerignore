@@ -1,0 +1,11 @@
+build/
+**/build/
+.git/
+.vscode/
+.devcontainer/
+generated/
+kubernetes/
+ansible/
+assets/
+*.md
+!README.md

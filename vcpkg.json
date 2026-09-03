@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "cassandra-grpc-dev",
+  "version": "1.0.0",
+  "dependencies": [
+    "grpc",
+    "protobuf",
+    "abseil",
+    "curl",
+    "libxml2"
+  ]
+}

@@ -1,31 +1,81 @@
-# Базовый образ
-FROM ubuntu:20.04
+# syntax=docker/dockerfile:1
+# Shared base image for all C++ services.
+# Builds every third-party dependency exactly once, via vcpkg manifest mode,
+# so coordinator and worker always link against identical library versions.
+FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND=noninteractive 
-# Установка необходимых инструментов и библиотек
-RUN apt-get update && apt-get install -y \
-    g++ \
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Toolchain + everything vcpkg needs to compile its ports from source
+# (perl/autoconf/automake/libtool/m4/python3 are pulled in transitively by
+# the openssl and libuv ports; libssl-dev/libuv1-dev/zlib1g-dev are for the
+# DataStax driver build below — see the note there).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     cmake \
+    ninja-build \
     git \
     curl \
-    unzip \
+    ca-certificates \
     zip \
+    unzip \
     tar \
-    protobuf-compiler \
     pkg-config \
-    && apt-get clean
+    perl \
+    python3 \
+    autoconf \
+    automake \
+    libtool \
+    m4 \
+    gdb \
+    libssl-dev \
+    libuv1-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Установка vcpkg
+# Install vcpkg itself
 WORKDIR /vcpkg
-RUN git clone https://github.com/microsoft/vcpkg.git . &&   \
-    ./bootstrap-vcpkg.sh && \
-    ./vcpkg integrate install 
+RUN git clone https://github.com/microsoft/vcpkg.git . && \
+    ./bootstrap-vcpkg.sh -disableMetrics
 
-# Установка общих зависимостей через vcpkg (добавьте свои библиотеки)
-RUN ./vcpkg update
-RUN ./vcpkg upgrade --no-dry-run
-
-
-# Добавление vcpkg в PATH
 ENV VCPKG_ROOT=/vcpkg
 ENV PATH="$VCPKG_ROOT:$PATH"
+ENV CMAKE_TOOLCHAIN_FILE=/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+# Build the manifest's dependencies once, into this shared base image
+WORKDIR /app
+COPY vcpkg.json ./
+# Cache mounts keep vcpkg's downloaded sources and binary cache across retries/rebuilds
+# of this layer (e.g. after a transient network blip) instead of recompiling from zero.
+RUN --mount=type=cache,target=/vcpkg/downloads \
+    --mount=type=cache,target=/root/.cache/vcpkg \
+    vcpkg install --clean-after-build && \
+    ls /app/vcpkg_installed | grep -v vcpkg | head -n1 > /vcpkg/triplet.txt
+
+# Generate the gRPC/protobuf stubs once, using the toolchain we just built,
+# so every service inheriting from this image already has them at /app/generated
+# (matches the absolute paths baked into coordinator/CMakeLists.txt and worker/CMakeLists.txt).
+COPY proto_files ./proto_files
+RUN VCPKG_TRIPLET=$(cat /vcpkg/triplet.txt) && \
+    PROTOC=/app/vcpkg_installed/${VCPKG_TRIPLET}/tools/protobuf/protoc && \
+    GRPC_PLUGIN=/app/vcpkg_installed/${VCPKG_TRIPLET}/tools/grpc/grpc_cpp_plugin && \
+    mkdir -p /app/generated && \
+    "$PROTOC" -I=/app/proto_files \
+        --cpp_out=/app/generated \
+        --grpc_out=/app/generated \
+        --plugin=protoc-gen-grpc="$GRPC_PLUGIN" \
+        /app/proto_files/task.proto
+
+# The DataStax C/C++ driver (worker/CMakeLists.txt links it as a bare "cassandra"
+# library from /usr/local) has no official vcpkg port, so it isn't in vcpkg.json.
+# Build it from source exactly once here, in the shared base image, instead of
+# per-service — this is the piece that used to be duplicated via git clone inside
+# worker/Dockerfile.
+RUN git clone --branch 2.17.1 --depth 1 https://github.com/datastax/cpp-driver.git /tmp/cpp-driver && \
+    mkdir -p /tmp/cpp-driver/build && \
+    cd /tmp/cpp-driver/build && \
+    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_LIBDIR=lib .. && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/cpp-driver

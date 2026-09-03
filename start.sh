@@ -1,17 +1,10 @@
-# 1. Сборка vcpkg-образа (если нужно)
-docker build -f ./docker/Dockerfile.vcpkg -t base-vcpkg .
+# 1. Сборка общего base-образа (vcpkg manifest: grpc/protobuf/cassandra-cpp-driver/abseil/curl/libxml2
+#    + сгенерированные protobuf/grpc заглушки из proto_files/)
+docker build -f ./docker/Dockerfile.vcpkg -t base-vcpkg:latest .
 
-# сборка grpc и предстартового образа
-docker build -f ./docker/Dockerfile.grpc -t grpc .
-docker build -f ./docker/Dockerfile.prestart -t prestart .
-
-docker build -f ./coordinator/Dockerfile -t distributed_parser-coordinator .
-docker build -f ./worker/Dockerfile -t distributed_parser-worker .
-# 2. Генерация gRPC кода
-docker run --rm \
-  -v $(pwd)/proto_files:/app/proto_files \
-  -v $(pwd)/generated:/app/generated \
-  grpc-generator
+# 2. Сборка образов coordinator и worker поверх base-vcpkg
+docker build -f ./coordinator/Dockerfile -t distributed_parser-coordinator ./coordinator
+docker build -f ./worker/Dockerfile -t distributed_parser-worker ./worker
 
 # 3. Запуск Minikube
 minikube start

@@ -1,0 +1,23 @@
+{
+  "name": "cassandra-grpc-dev",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.extend.yml"],
+  "service": "coordinator",
+  "workspaceFolder": "/workspaces/cassandra-grpc-dev",
+  "shutdownAction": "stopCompose",
+  "initializeCommand": "docker build -f docker/Dockerfile.vcpkg -t base-vcpkg:latest .",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "cmake.configureOnOpen": true,
+        "cmake.generator": "Unix Makefiles",
+        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+      }
+    }
+  }
+}
