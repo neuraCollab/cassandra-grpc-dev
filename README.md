@@ -1,9 +1,9 @@
 # 🚀 C++ gRPC + Cassandra Dev Stack
 
 ![CI/CD](https://github.com/neuraCollab/cassandra-grpc-dev/actions/workflows/publish-ghcr.yml/badge.svg)
-![Image Size](https://img.shields.io/docker/image-size/neuracollab/coordinator?label=coordinator&color=blue)
-![Image Size](https://img.shields.io/docker/image-size/neuracollab/worker?label=worker&color=blue)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+[![coordinator on GHCR](https://img.shields.io/badge/ghcr.io-coordinator-blue?logo=docker)](https://github.com/neuraCollab/cassandra-grpc-dev/pkgs/container/coordinator)
+[![worker on GHCR](https://img.shields.io/badge/ghcr.io-worker-blue?logo=docker)](https://github.com/neuraCollab/cassandra-grpc-dev/pkgs/container/worker)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Production-ready Docker template for building distributed C++ microservices with gRPC, Protocol Buffers, and Apache Cassandra.**
 
