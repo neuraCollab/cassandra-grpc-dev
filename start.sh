@@ -1,3 +1,6 @@
+#!/bin/bash
+set -e
+
 # 1. Сборка общего base-образа (vcpkg manifest: grpc/protobuf/cassandra-cpp-driver/abseil/curl/libxml2
 #    + сгенерированные protobuf/grpc заглушки из proto_files/)
 docker build -f ./docker/Dockerfile.vcpkg -t base-vcpkg:latest .
@@ -13,7 +16,7 @@ minikube start
 minikube image load distributed_parser-coordinator:latest
 minikube image load distributed_parser-worker:latest
 
-ubectl create configmap cassandra-setup --from-file=setup.cql=.\cassandra\setup.cql
+kubectl create configmap cassandra-setup --from-file=setup.cql=./cassandra/setup.cql
 
 # 5. Применение манифестов
 kubectl apply -f ./kubernetes/ --recursive
